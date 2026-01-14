@@ -129,7 +129,7 @@ def refresh_scanners():
         socketio.emit('scanners_updated', {
             'scanners': scanners,
             'timestamp': datetime.now().isoformat()
-        }, broadcast=True)
+        })
         
         logger.info("Scanner list refreshed")
         return jsonify({
@@ -179,7 +179,7 @@ def select_scanner():
         socketio.emit('scanner_selected', {
             'scanner_id': scanner_id,
             'timestamp': datetime.now().isoformat()
-        }, broadcast=True)
+        })
         
         return jsonify({
             "status": "selected",
@@ -234,7 +234,7 @@ def start_scan():
             'scan_id': scan_id,
             'scanner_id': scanner_id,
             'timestamp': datetime.now().isoformat()
-        }, broadcast=True)
+        })
         
         return jsonify({
             "scan_id": scan_id,
@@ -321,7 +321,7 @@ def delete_scan(scan_id: str):
         socketio.emit('scan_deleted', {
             'scan_id': scan_id,
             'timestamp': datetime.now().isoformat()
-        }, broadcast=True)
+        })
         
         return jsonify({
             "status": "deleted",

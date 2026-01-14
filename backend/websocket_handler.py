@@ -38,7 +38,7 @@ class WebSocketHandler:
             self.socketio.emit('scanners_updated', {
                 'scanners': scanners,
                 'timestamp': datetime.now().isoformat()
-            }, broadcast=True)
+            })
             logger.info("Broadcasted scanner update")
         except Exception as e:
             logger.error(f"Error broadcasting scanner update: {str(e)}")
@@ -50,7 +50,7 @@ class WebSocketHandler:
                 'scan_id': scan_id,
                 'scanner_id': scanner_id,
                 'timestamp': datetime.now().isoformat()
-            }, broadcast=True)
+            })
             logger.info(f"Broadcasted scan started: {scan_id}")
         except Exception as e:
             logger.error(f"Error broadcasting scan started: {str(e)}")
@@ -63,7 +63,7 @@ class WebSocketHandler:
                 'progress': progress,
                 'status': status,
                 'timestamp': datetime.now().isoformat()
-            }, broadcast=True)
+            })
             logger.debug(f"Broadcasted scan progress: {scan_id} - {progress}%")
         except Exception as e:
             logger.error(f"Error broadcasting scan progress: {str(e)}")
@@ -76,7 +76,7 @@ class WebSocketHandler:
                 'image_path': image_path,
                 'file_size': file_size,
                 'timestamp': datetime.now().isoformat()
-            }, broadcast=True)
+            })
             logger.info(f"Broadcasted scan completed: {scan_id}")
         except Exception as e:
             logger.error(f"Error broadcasting scan completed: {str(e)}")
@@ -88,7 +88,7 @@ class WebSocketHandler:
                 'scan_id': scan_id,
                 'error': error_message,
                 'timestamp': datetime.now().isoformat()
-            }, broadcast=True)
+            })
             logger.error(f"Broadcasted scan error: {scan_id} - {error_message}")
         except Exception as e:
             logger.error(f"Error broadcasting scan error: {str(e)}")
@@ -99,7 +99,7 @@ class WebSocketHandler:
             self.socketio.emit('scanner_selected', {
                 'scanner_id': scanner_id,
                 'timestamp': datetime.now().isoformat()
-            }, broadcast=True)
+            })
             logger.info(f"Broadcasted scanner selected: {scanner_id}")
         except Exception as e:
             logger.error(f"Error broadcasting scanner selected: {str(e)}")

@@ -63,7 +63,7 @@ export const scanAPI = {
     return response.data.history
   },
 
-  getImage: async (scanId: string) => {
+  getImage: (scanId: string): string => {
     return `${API_BASE_URL}/api/scan/${scanId}`
   },
 

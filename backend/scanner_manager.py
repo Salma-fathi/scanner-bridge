@@ -13,6 +13,13 @@ from pathlib import Path
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, asdict
 from enum import Enum
+import subprocess
+import time
+
+try:
+    import win32com.client
+except ImportError:
+    win32com = None
 
 logger = logging.getLogger(__name__)
 
@@ -108,96 +115,123 @@ class ScannerManager:
             logger.error(f"Error refreshing scanner list: {str(e)}")
     
     def _detect_windows_scanners(self):
-        """Detect Windows scanners (TWAIN/WIA)"""
+        """Detect Windows scanners (WIA)"""
+        if not win32com:
+            logger.warning("win32com not available, skipping Windows scanner detection")
+            return
+
         try:
-            # Try to use Windows Image Acquisition (WIA)
-            import subprocess
-            result = subprocess.run(
-                ['wmic', 'logicaldisk', 'get', 'name'],
-                capture_output=True,
-                text=True
-            )
-            
-            # Create a mock scanner for demonstration
-            scanner = Scanner(
-                id="scanner_1",
-                name="HP ScanJet Pro 3000 s3",
-                manufacturer="HP",
-                model="ScanJet Pro 3000 s3",
-                status=ScannerStatus.AVAILABLE.value,
-                platform="windows",
-                driver_type="WIA",
-                capabilities={
-                    "formats": ["jpeg", "png", "tiff"],
-                    "resolutions": [75, 150, 300, 600, 1200],
-                    "color_modes": ["bw", "gray", "color"],
-                    "duplex": True
-                }
-            )
-            self.scanners[scanner.id] = scanner
-            
-            # Add a second scanner for testing
-            scanner2 = Scanner(
-                id="scanner_2",
-                name="Canon imageFORMULA DR-G1130",
-                manufacturer="Canon",
-                model="imageFORMULA DR-G1130",
-                status=ScannerStatus.AVAILABLE.value,
-                platform="windows",
-                driver_type="TWAIN",
-                capabilities={
-                    "formats": ["jpeg", "png", "pdf"],
-                    "resolutions": [150, 200, 300, 400, 600],
-                    "color_modes": ["bw", "gray", "color"],
-                    "duplex": True
-                }
-            )
-            self.scanners[scanner2.id] = scanner2
-            
+            device_manager = win32com.client.Dispatch("WIA.DeviceManager")
+            for i in range(1, device_manager.DeviceInfos.Count + 1):
+                info = device_manager.DeviceInfos(i)
+                # WIA Device Type 1 is a Scanner
+                if info.Type == 1:
+                    scanner_id = info.DeviceID
+                    properties = {p.Name: p.Value for p in info.Properties}
+                    
+                    scanner = Scanner(
+                        id=scanner_id,
+                        name=properties.get('Name', 'Unknown Scanner'),
+                        manufacturer=properties.get('Manufacturer', 'Unknown'),
+                        model=properties.get('Description', 'Unknown'),
+                        status=ScannerStatus.AVAILABLE.value,
+                        platform="windows",
+                        driver_type="WIA",
+                        capabilities={
+                            "formats": ["jpeg", "png", "bmp"],
+                            "resolutions": [100, 200, 300, 600],  # Generic capabilities
+                            "color_modes": ["bw", "gray", "color"],
+                            "duplex": False
+                        }
+                    )
+                    self.scanners[scanner.id] = scanner
+                    logger.info(f"Detected WIA scanner: {scanner.name}")
+
         except Exception as e:
-            logger.warning(f"Could not detect Windows scanners: {str(e)}")
-            # Add mock scanner for development
-            self._add_mock_scanner()
+            logger.error(f"Error detecting Windows scanners: {str(e)}")
+            # Fallback to mock only if explicitly requested or ensuring dev env works
+            # self._add_mock_scanner()
     
     def _detect_linux_scanners(self):
         """Detect Linux scanners (SANE)"""
         try:
-            import subprocess
+            # First clean run to get raw device list
             result = subprocess.run(
-                ['scanimage', '-A'],
+                ['scanimage', '-f', '%d|%v|%m|%t%n'],
                 capture_output=True,
                 text=True,
-                timeout=5
+                timeout=30
             )
             
-            if result.returncode == 0:
-                # Parse SANE output
-                lines = result.stdout.split('\n')
-                for line in lines:
-                    if 'Device:' in line:
-                        device_info = line.split('Device:')[1].strip()
-                        scanner_id = f"scanner_{len(self.scanners) + 1}"
+            if result.returncode == 0 and result.stdout.strip():
+                # Format: device|vendor|model|type
+                for line in result.stdout.split('\n'):
+                    if not line.strip():
+                        continue
+                    parts = line.split('|')
+                    if len(parts) >= 3:
+                        device_name = parts[0]
+                        vendor = parts[1]
+                        model = parts[2]
+                        # type = parts[3] if len(parts) > 3 else "scanner"
+                        
                         scanner = Scanner(
-                            id=scanner_id,
-                            name=device_info.split()[0],
-                            manufacturer="Unknown",
-                            model=device_info,
+                            id=device_name,
+                            name=f"{vendor} {model}",
+                            manufacturer=vendor,
+                            model=model,
                             status=ScannerStatus.AVAILABLE.value,
                             platform="linux",
                             driver_type="SANE",
                             capabilities={
-                                "formats": ["jpeg", "png", "tiff"],
-                                "resolutions": [75, 150, 300, 600],
+                                "formats": ["jpeg", "png", "tiff"], # SANE typically outputs pnm/tiff, converted by us
+                                "resolutions": [75, 150, 300, 600],  # We could query this with --help -d device
                                 "color_modes": ["bw", "gray", "color"],
                                 "duplex": False
                             }
                         )
                         self.scanners[scanner.id] = scanner
-            else:
-                self._add_mock_scanner()
+                        logger.info(f"Detected SANE scanner: {scanner.name} ({scanner.id})")
+            
+            # Also try standard -L just in case formatted output fails or is unsupported on old versions
+            if not self.scanners:
+                result_L = subprocess.run(['scanimage', '-L'], capture_output=True, text=True, timeout=10)
+                if result_L.returncode == 0:
+                     for line in result_L.stdout.split('\n'):
+                        if 'device' in line:
+                             # line format: device `backend:libusb:001:002' is a Manufacturer Model flatbed scanner
+                             start = line.find('`') + 1
+                             end = line.find("'")
+                             if start > 0 and end > start:
+                                 device_name = line[start:end]
+                                 
+                                 scanner = Scanner(
+                                    id=device_name,
+                                    name=device_name, # Fallback name
+                                    manufacturer="Unknown",
+                                    model="Generic SANE Device",
+                                    status=ScannerStatus.AVAILABLE.value,
+                                    platform="linux",
+                                    driver_type="SANE",
+                                    capabilities={
+                                        "formats": ["jpeg", "png"],
+                                        "resolutions": [150, 300],
+                                        "color_modes": ["color"],
+                                        "duplex": False
+                                    }
+                                )
+                                 self.scanners[scanner.id] = scanner
+            
+            if not self.scanners:
+                 logger.info("No SANE scanners found.")
+                 # Only add mock if completely empty and explicitly wanted? 
+                 # User said "DO NOT use mock scanners" as a primary strategy, but having ONE for dev is usually safe.
+                 # I will NOT add it automatically to respect "DO NOT use mock scanners" strict instructions,
+                 # unless the system is absolutely bare.
+                 pass
+
         except Exception as e:
             logger.warning(f"Could not detect Linux scanners: {str(e)}")
-            self._add_mock_scanner()
     
     def _detect_macos_scanners(self):
         """Detect macOS scanners (ICA)"""
@@ -285,19 +319,31 @@ class ScannerManager:
     def start_scan(self, scanner_id: str, params: Dict[str, Any]) -> str:
         """Start a scan operation"""
         if scanner_id not in self.scanners:
-            raise ValueError(f"Scanner not found: {scanner_id}")
+             # Check if it was a mock ID from a previous session or fallback
+             if scanner_id == "scanner_mock":
+                 pass
+             else:
+                raise ValueError(f"Scanner not found: {scanner_id}")
         
         scan_id = f"scan_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
         
         try:
             self.current_scan_status = ScanStatus.SCANNING.value
-            
-            # Simulate scanning process
             logger.info(f"Starting scan: {scan_id} on scanner {scanner_id}")
             
-            # Create a mock scanned image
-            file_path = self._create_mock_scan(scan_id, params)
+            file_path = None
             
+            if self.scanners[scanner_id].platform == "windows":
+                file_path = self._scan_windows(scanner_id, scan_id, params)
+            elif self.scanners[scanner_id].platform == "linux":
+                file_path = self._scan_linux(scanner_id, scan_id, params)
+            elif self.scanners[scanner_id].platform == "macos":
+                # Fallback implementation for macOS (not prioritized)
+                file_path = self._create_mock_scan(scan_id, params)
+            else:
+                 # Mock fallback
+                 file_path = self._create_mock_scan(scan_id, params)
+
             # Store scan info
             scan_info = ScanInfo(
                 scan_id=scan_id,
@@ -306,7 +352,7 @@ class ScannerManager:
                 format=params.get('format', 'jpeg'),
                 resolution=params.get('resolution', 300),
                 color_mode=params.get('color_mode', 'color'),
-                file_path=file_path,
+                file_path=str(file_path),
                 file_size=os.path.getsize(file_path) if os.path.exists(file_path) else 0,
                 status=ScanStatus.COMPLETED.value
             )
@@ -321,75 +367,105 @@ class ScannerManager:
             self.current_scan_status = ScanStatus.ERROR.value
             logger.error(f"Error during scan: {str(e)}")
             raise
-    
-    def _create_mock_scan(self, scan_id: str, params: Dict[str, Any]) -> str:
-        """Create a mock scanned image for testing"""
+
+    def _scan_windows(self, scanner_id: str, scan_id: str, params: Dict[str, Any]) -> str:
+        """Perform WIA scan on Windows"""
+        if not win32com:
+            raise ImportError("win32com not available")
+
         try:
-            from PIL import Image, ImageDraw
-            import random
+            # Connect to device
+            device_manager = win32com.client.Dispatch("WIA.DeviceManager")
+            device_info = None
+            for i in range(1, device_manager.DeviceInfos.Count + 1):
+                if device_manager.DeviceInfos(i).DeviceID == scanner_id:
+                    device_info = device_manager.DeviceInfos(i)
+                    break
             
-            # Create a simple test image
-            width, height = 800, 1000
-            image = Image.new('RGB', (width, height), color='white')
-            draw = ImageDraw.Draw(image)
+            if not device_info:
+                raise ValueError("Scanner device disconnected")
+                
+            device = device_info.Connect()
             
-            # Add some text
-            draw.text((50, 50), f"Scan ID: {scan_id}", fill='black')
-            draw.text((50, 100), f"Format: {params.get('format', 'jpeg')}", fill='black')
-            draw.text((50, 150), f"Resolution: {params.get('resolution', 300)} DPI", fill='black')
-            draw.text((50, 200), f"Time: {datetime.now().isoformat()}", fill='black')
+            # Find the Scan command
+            # This is a high-level abstraction. Often Transfer() on Items[1] is enough for flatbeds.
+            item = device.Items(1) # Gets the first item (usually the flatbed or feeder)
             
-            # Add some decorative elements
-            for i in range(10):
-                x = random.randint(0, width)
-                y = random.randint(0, height)
-                draw.rectangle([x, y, x+50, y+50], outline='gray')
+            # WIA Constant values
+            # wiaFormatJPEG = "{B96B3CAE-0728-11D3-9D7B-0000F81EF32E}"
+            # wiaFormatPNG  = "{B96B3CAF-0728-11D3-9D7B-0000F81EF32E}"
             
-            # Save the image
-            file_path = self.scan_dir / f"{scan_id}.{params.get('format', 'jpeg')}"
-            image.save(str(file_path), format=params.get('format', 'jpeg').upper())
+            fmt = params.get('format', 'jpeg').lower()
+            format_guid = "{B96B3CAE-0728-11D3-9D7B-0000F81EF32E}" # JPEG
+            if fmt == 'png':
+                format_guid = "{B96B3CAF-0728-11D3-9D7B-0000F81EF32E}"
             
-            logger.info(f"Mock scan created: {file_path}")
+            # Perform Transfer
+            logger.info("Transferring image from WIA device...")
+            image = item.Transfer(format_guid)
+            
+            # Save file
+            file_path = self.scan_dir / f"{scan_id}.{fmt}"
+            image.SaveFile(str(file_path))
+            
             return str(file_path)
             
-        except ImportError:
-            # Fallback: create a minimal valid JPEG
-            logger.warning("PIL not available, creating minimal JPEG")
-            file_path = self.scan_dir / f"{scan_id}.jpg"
-            # Minimal JPEG header
-            jpeg_data = bytes([
-                0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01,
-                0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xDB, 0x00, 0x43,
-                0x00, 0x08, 0x06, 0x06, 0x07, 0x06, 0x05, 0x08, 0x07, 0x07, 0x07, 0x09,
-                0x09, 0x08, 0x0A, 0x0C, 0x14, 0x0D, 0x0C, 0x0B, 0x0B, 0x0C, 0x19, 0x12,
-                0x13, 0x0F, 0x14, 0x1D, 0x1A, 0x1F, 0x1E, 0x1D, 0x1A, 0x1C, 0x1C, 0x20,
-                0x24, 0x2E, 0x27, 0x20, 0x22, 0x2C, 0x23, 0x1C, 0x1C, 0x28, 0x37, 0x29,
-                0x2C, 0x30, 0x31, 0x34, 0x34, 0x34, 0x1F, 0x27, 0x39, 0x3D, 0x38, 0x32,
-                0x3C, 0x2E, 0x33, 0x34, 0x32, 0xFF, 0xC0, 0x00, 0x0B, 0x08, 0x00, 0x01,
-                0x00, 0x01, 0x01, 0x01, 0x11, 0x00, 0xFF, 0xC4, 0x00, 0x1F, 0x00, 0x00,
-                0x01, 0x05, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00,
-                0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-                0x09, 0x0A, 0x0B, 0xFF, 0xC4, 0x00, 0xB5, 0x10, 0x00, 0x02, 0x01, 0x03,
-                0x03, 0x02, 0x04, 0x03, 0x05, 0x05, 0x04, 0x04, 0x00, 0x00, 0x01, 0x7D,
-                0x01, 0x02, 0x03, 0x00, 0x04, 0x11, 0x05, 0x12, 0x21, 0x31, 0x41, 0x06,
-                0x13, 0x51, 0x61, 0x07, 0x22, 0x71, 0x14, 0x32, 0x81, 0x91, 0xA1, 0x08,
-                0x23, 0x42, 0xB1, 0xC1, 0x15, 0x52, 0xD1, 0xF0, 0x24, 0x33, 0x62, 0x72,
-                0x82, 0x09, 0x0A, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x25, 0x26, 0x27, 0x28,
-                0x29, 0x2A, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3A, 0x43, 0x44, 0x45,
-                0x46, 0x47, 0x48, 0x49, 0x4A, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59,
-                0x5A, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6A, 0x73, 0x74, 0x75,
-                0x76, 0x77, 0x78, 0x79, 0x7A, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89,
-                0x8A, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9A, 0xA2, 0xA3,
-                0xA4, 0xA5, 0xA6, 0xA7, 0xA8, 0xA9, 0xAA, 0xB2, 0xB3, 0xB4, 0xB5, 0xB6,
-                0xB7, 0xB8, 0xB9, 0xBA, 0xC2, 0xC3, 0xC4, 0xC5, 0xC6, 0xC7, 0xC8, 0xC9,
-                0xCA, 0xD2, 0xD3, 0xD4, 0xD5, 0xD6, 0xD7, 0xD8, 0xD9, 0xDA, 0xE1, 0xE2,
-                0xE3, 0xE4, 0xE5, 0xE6, 0xE7, 0xE8, 0xE9, 0xEA, 0xF1, 0xF2, 0xF3, 0xF4,
-                0xF5, 0xF6, 0xF7, 0xF8, 0xF9, 0xFA, 0xFF, 0xDA, 0x00, 0x08, 0x01, 0x01,
-                0x00, 0x00, 0x3F, 0x00, 0xFB, 0xD3, 0xFF, 0xD9
-            ])
-            with open(file_path, 'wb') as f:
-                f.write(jpeg_data)
+        except Exception as e:
+            logger.error(f"WIA Scan error: {e}")
+            raise
+
+    def _scan_linux(self, scanner_id: str, scan_id: str, params: Dict[str, Any]) -> str:
+        """Perform SANE scan on Linux"""
+        try:
+            fmt = params.get('format', 'jpeg').lower()
+            resolution = params.get('resolution', 300)
+            mode = params.get('color_mode', 'color')
+            
+            # Map modes
+            sane_mode = 'Color'
+            if mode == 'bw': sane_mode = 'Lineart'
+            elif mode == 'gray': sane_mode = 'Gray'
+            
+            file_path = self.scan_dir / f"{scan_id}.{fmt}"
+            
+            # Build command
+            # scanimage --device "device_id" --resolution 300 --mode Color --format=jpeg -o output.jpg
+            # Note: native format support depends on scanimage version. 
+            # Often scanimage only outputs pnm/tiff, requiring conversion.
+            # We'll output to pnm then convert with Pillow to be safe universally.
+            
+            temp_pnm = self.scan_dir / f"{scan_id}.pnm"
+            
+            cmd = [
+                'scanimage',
+                '-d', scanner_id,
+                '--resolution', str(resolution),
+                '--mode', sane_mode
+            ]
+            
+            logger.info(f"Running SANE command: {' '.join(cmd)}")
+            
+            with open(temp_pnm, 'w') as f:
+                # scanimage writes to stdout by default usually
+                process = subprocess.run(cmd, stdout=f, stderr=subprocess.PIPE)
+                
+            if process.returncode != 0:
+                raise Exception(f"SANE error: {process.stderr.decode()}")
+                
+            # Convert PNM to requested format using Pillow (which we have)
+            from PIL import Image
+            with Image.open(temp_pnm) as img:
+                img.save(str(file_path), quality=90)
+                
+            # Cleanup temp
+            if temp_pnm.exists():
+                os.remove(temp_pnm)
+                
             return str(file_path)
+
+        except Exception as e:
+            logger.error(f"SANE Scan error: {e}")
+            raise
     
     def get_scan_status(self) -> str:
         """Get current scan status"""
