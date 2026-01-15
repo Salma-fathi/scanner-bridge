@@ -18,30 +18,6 @@ To satisfy the judges, your project must follow this robust structure:
 2. **The Local Agent (Node.js/Python)**: The "Muscle." It stays in the system tray, talks to the scanner drivers, and serves a local WebSocket/HTTP server.
 3. **The Bridge**: Data is passed as a Base64 String or Blob URL, ensuring the file "appears" in the form without a manual upload.
 
-### 🤖 Final Cursor Prompt (The "Polishing" Phase)
-
-Use this prompt in Cursor (Cmd+K / Ctrl+K) on your main React file to reach the "Final Version" quality:
-
-"Refactor this React application into a production-ready Scanner Dashboard.
-
-1. **UI/UX Excellence**: 
-   - Implement a Bento Box layout using Tailwind CSS.
-   - Create a 'Status Bar' at the top with a pulsing green light when the local agent is detected.
-   - Add a 'Scan History' sidebar that stores thumbnails of the current session using localStorage.
-
-2. **Advanced Components**:
-   - Use Framer Motion for a 'Slide-in' animation when a new scan arrives.
-   - Build a 'Image Actions' overlay on the preview (Rotate, Flip, Delete).
-   - Implement a 'Glassmorphism' effect for the settings panel.
-
-3. **Error Resilience**:
-   - Create a beautiful 'Empty State' with a Sudanese-themed illustration or a clean icon if no scanner is found.
-   - Add a 'Troubleshooting' tooltip that guides the user to check their USB connection.
-
-4. **Code Quality**:
-   - Clean up all console logs.
-   - Use TypeScript-like prop definitions for clarity.
-   - Ensure all colors follow a professional 'Midnight & Emerald' theme."
 
 ### 📝 Project Setup
 

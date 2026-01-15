@@ -66,8 +66,8 @@ export default function Sidebar() {
                     <button
                         key={item.id}
                         className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all group ${item.active
-                                ? 'bg-sidebar-active text-sidebar-text-active'
-                                : 'text-sidebar-text hover:bg-sidebar-hover hover:text-sidebar-text-active'
+                            ? 'bg-sidebar-active text-sidebar-text-active'
+                            : 'text-sidebar-text hover:bg-sidebar-hover hover:text-sidebar-text-active'
                             }`}
                     >
                         <span className="flex-shrink-0">{item.icon}</span>
@@ -83,8 +83,8 @@ export default function Sidebar() {
             {/* Connection Status */}
             <div className="px-3 py-3 border-t border-sidebar-border">
                 <div className={`flex items-center gap-3 px-3 py-2 rounded-lg ${connectionStatus === 'connected'
-                        ? 'bg-success/10'
-                        : 'bg-sidebar-hover'
+                    ? 'bg-success/10'
+                    : 'bg-sidebar-hover'
                     }`}>
                     {connectionStatus === 'connected' ? (
                         <Wifi size={18} className="text-success flex-shrink-0" />

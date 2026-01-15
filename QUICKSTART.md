@@ -13,7 +13,7 @@ Get Scanner Bridge up and running in 5 minutes!
 ### 1. Clone Repository
 
 ```bash
-git clone https://github.com/yourusername/scanner-bridge.git
+git clone https://github.com/Salma-fathi/scanner-bridge.git
 cd scanner-bridge
 ```
 
