@@ -1,6 +1,6 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss/base";
+@import "tailwindcss/components";
+@import "tailwindcss/utilities";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    SOUDANI-MODERN DESIGN SYSTEM
@@ -182,7 +182,12 @@
    ───────────────────────────────────────────────────────────────────────── */
 @layer base {
   body {
-    @apply font-sans antialiased text-text-primary bg-bg-primary transition-colors duration-200;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    color: var(--color-text-primary);
+    background-color: var(--color-bg-primary);
+    transition: background-color var(--transition-base), color var(--transition-base);
   }
 }
 
@@ -198,9 +203,25 @@
   }
 
   .btn-primary {
-    @apply bg-primary text-white bg-gradient-to-br from-primary to-indigo-500 hover:scale-[1.02] hover:shadow-primary active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100;
-
+    background-color: var(--color-primary);
+    color: var(--color-text-inverse);
+    background-image: linear-gradient(to bottom right, var(--color-primary), #6366f1);
     transition: all var(--transition-base);
+  }
+
+  .btn-primary:hover {
+    transform: scale(1.02);
+    box-shadow: var(--shadow-primary);
+  }
+
+  .btn-primary:active {
+    transform: scale(0.98);
+  }
+
+  .btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: scale(1);
   }
 }
 
